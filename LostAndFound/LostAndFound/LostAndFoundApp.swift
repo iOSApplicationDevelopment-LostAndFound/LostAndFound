@@ -10,6 +10,8 @@ import FirebaseCore
 
 @main
 struct LostAndFoundApp: App {
+    @StateObject private var authService = AuthService()
+    @StateObject private var itemRepository = ItemRepository()
 
     init() {
         FirebaseApp.configure()
@@ -18,6 +20,8 @@ struct LostAndFoundApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(authService)
+                .environmentObject(itemRepository)
         }
     }
 }
