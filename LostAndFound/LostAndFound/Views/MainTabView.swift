@@ -11,7 +11,7 @@ struct MainTabView: View {
     var body: some View {
         TabView {
             NavigationStack {
-                PlaceholderTabView(title: "Home", systemImage: "house")
+                HomeView()
             }
             .tabItem {
                 Label("Home", systemImage: "house")
