@@ -18,7 +18,7 @@ struct MainTabView: View {
             }
 
             NavigationStack {
-                PlaceholderTabView(title: "Map", systemImage: "map")
+                MapView()
             }
             .tabItem {
                 Label("Map", systemImage: "map")

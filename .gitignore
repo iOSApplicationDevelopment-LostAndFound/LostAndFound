@@ -19,7 +19,6 @@ xcuserdata/
 
 # Firebase — never commit this
 GoogleService-Info.plist
-
 # Build artifacts
 DerivedData/
 *.ipa
