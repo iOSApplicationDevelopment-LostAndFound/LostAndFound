@@ -25,7 +25,7 @@ struct MainTabView: View {
             }
 
             NavigationStack {
-                PlaceholderTabView(title: "Post", systemImage: "plus.circle")
+                PostView()
             }
             .tabItem {
                 Label("Post", systemImage: "plus.circle")
