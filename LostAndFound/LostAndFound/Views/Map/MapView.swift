@@ -12,12 +12,28 @@ struct MapView: View {
     @EnvironmentObject var itemRepository: ItemRepository
     @StateObject private var locationManager = LocationManager()
     @State private var selectedItem: Item? = nil
+    @State private var hasFittedCamera = false
+    @State private var currentRegion = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: -33.8834, longitude: 151.2006),
+        span: MKCoordinateSpan(latitudeDelta: 0.006, longitudeDelta: 0.006)
+    )
     @State private var cameraPosition: MapCameraPosition = .region(
         MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: -33.8834, longitude: 151.2006),
             span: MKCoordinateSpan(latitudeDelta: 0.006, longitudeDelta: 0.006)
         )
     )
+
+    private func zoom(in zoomIn: Bool) {
+        let factor: Double = zoomIn ? 0.5 : 2.0
+        let newSpan = MKCoordinateSpan(
+            latitudeDelta: currentRegion.span.latitudeDelta * factor,
+            longitudeDelta: currentRegion.span.longitudeDelta * factor
+        )
+        withAnimation {
+            cameraPosition = .region(MKCoordinateRegion(center: currentRegion.center, span: newSpan))
+        }
+    }
 
     var mappableItems: [Item] {
         itemRepository.items.filter { $0.latitude != nil && $0.longitude != nil && $0.status == "active" }
@@ -43,6 +59,13 @@ struct MapView: View {
             }
             .mapStyle(.standard)
             .ignoresSafeArea(edges: .top)
+            .mapControls {
+                MapUserLocationButton()
+                MapCompass()
+            }
+            .onMapCameraChange { context in
+                currentRegion = context.region
+            }
 
            
             VStack {
@@ -53,6 +76,34 @@ struct MapView: View {
                         .padding(.top, 12)
                 }
                 Spacer()
+            }
+
+            VStack {
+                Spacer()
+                HStack {
+                    VStack(spacing: 0) {
+                        Button {
+                            zoom(in: true)
+                        } label: {
+                            Image(systemName: "plus")
+                                .frame(width: 36, height: 36)
+                                .background(Color(.systemBackground))
+                        }
+                        Divider().frame(width: 36)
+                        Button {
+                            zoom(in: false)
+                        } label: {
+                            Image(systemName: "minus")
+                                .frame(width: 36, height: 36)
+                                .background(Color(.systemBackground))
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .shadow(color: .black.opacity(0.12), radius: 4)
+                    .padding(.leading, 14)
+                    .padding(.bottom, 160)
+                    Spacer()
+                }
             }
 
             
@@ -74,6 +125,25 @@ struct MapView: View {
         .navigationTitle("Map")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { locationManager.requestPermission() }
+        .onReceive(itemRepository.$items) { items in
+            guard !hasFittedCamera else { return }
+            let mappable = items.filter { $0.latitude != nil && $0.longitude != nil && $0.status == "active" }
+            guard !mappable.isEmpty else { return }
+            hasFittedCamera = true
+            let lats = mappable.compactMap { $0.latitude }
+            let lons = mappable.compactMap { $0.longitude }
+            let center = CLLocationCoordinate2D(
+                latitude: (lats.min()! + lats.max()!) / 2,
+                longitude: (lons.min()! + lons.max()!) / 2
+            )
+            let span = MKCoordinateSpan(
+                latitudeDelta: max((lats.max()! - lats.min()!) * 1.5, 0.006),
+                longitudeDelta: max((lons.max()! - lons.min()!) * 1.5, 0.006)
+            )
+            withAnimation {
+                cameraPosition = .region(MKCoordinateRegion(center: center, span: span))
+            }
+        }
         .onReceive(locationManager.$userLocation) { location in
             guard let coordinate = location?.coordinate else { return }
             withAnimation {
