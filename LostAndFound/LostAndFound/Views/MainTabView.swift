@@ -32,7 +32,7 @@ struct MainTabView: View {
             }
 
             NavigationStack {
-                PlaceholderTabView(title: "Alerts", systemImage: "bell")
+                AlertsView()
             }
             .tabItem {
                 Label("Alerts", systemImage: "bell")
