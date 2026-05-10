@@ -8,6 +8,7 @@
 import SwiftUI
 import FirebaseAuth
 
+
 struct ItemDetailView: View {
     let item: Item
 

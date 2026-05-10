@@ -8,6 +8,7 @@
 import SwiftUI
 import PhotosUI
 import MapKit
+import CoreLocation
 import FirebaseAuth
 import FirebaseFirestore
 
@@ -24,9 +25,11 @@ struct PostView: View {
     @State private var selectedPhoto: PhotosPickerItem? = nil
     @State private var selectedPhotoData: Data? = nil
     @State private var pickedCoordinate: CLLocationCoordinate2D? = nil
+    @State private var buildingRoom: String = ""
     @State private var showLocationPicker: Bool = false
     @State private var isPosting: Bool = false
     @State private var errorMessage: String? = nil
+    @State private var showSuccess: Bool = false
 
     let categories = ["bag", "electronics", "keys", "clothing", "other"]
 
@@ -90,7 +93,7 @@ struct PostView: View {
                         .cornerRadius(10)
 
                     HStack {
-                        TextField("Location", text: $location)
+                        TextField("Location (tap map to auto-fill)", text: $location)
                         Spacer()
                         Button {
                             showLocationPicker = true
@@ -102,6 +105,11 @@ struct PostView: View {
                     .padding()
                     .background(Color(.systemGray6))
                     .cornerRadius(10)
+
+                    TextField("Building / Room (optional, e.g. CB04.03.01)", text: $buildingRoom)
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
                 }
                 .padding(.horizontal)
 
@@ -163,6 +171,25 @@ struct PostView: View {
         .sheet(isPresented: $showLocationPicker) {
             LocationPickerView(coordinate: $pickedCoordinate, locationName: $location)
         }
+        .overlay(alignment: .top) {
+            if showSuccess {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                    Text("Item posted successfully!")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Color(.systemBackground))
+                .cornerRadius(12)
+                .shadow(color: .black.opacity(0.12), radius: 8)
+                .padding(.top, 8)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(duration: 0.3), value: showSuccess)
     }
 
     private func postItem() async {
@@ -170,13 +197,17 @@ struct PostView: View {
         isPosting = true
         errorMessage = nil
 
+        let fullLocation = buildingRoom.trimmingCharacters(in: .whitespaces).isEmpty
+            ? location
+            : "\(location), \(buildingRoom)"
+
         let newItem = Item(id: UUID().uuidString, data: [
             "title": title,
             "description": description,
             "category": selectedCategory,
             "type": itemType,
             "status": "active",
-            "location": location,
+            "location": fullLocation,
             "latitude": pickedCoordinate?.latitude as Any,
             "longitude": pickedCoordinate?.longitude as Any,
             "postedBy": user.uid,
@@ -188,6 +219,9 @@ struct PostView: View {
             if let item = newItem {
                 try await itemRepository.createItem(item)
                 resetForm()
+                withAnimation { showSuccess = true }
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                withAnimation { showSuccess = false }
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -199,6 +233,7 @@ struct PostView: View {
         title = ""
         description = ""
         location = ""
+        buildingRoom = ""
         selectedCategory = "other"
         itemType = "lost"
         selectedPhoto = nil
@@ -219,6 +254,8 @@ private struct LocationPickerView: View {
         )
     )
     @State private var pinCoordinate: CLLocationCoordinate2D? = nil
+    @State private var resolvedName: String = ""
+    @State private var isGeocoding: Bool = false
 
     var body: some View {
         NavigationStack {
@@ -237,18 +274,40 @@ private struct LocationPickerView: View {
                     .onTapGesture { screenPoint in
                         if let coord = proxy.convert(screenPoint, from: .local) {
                             pinCoordinate = coord
+                            reverseGeocode(coord)
                         }
                     }
                 }
 
                 VStack {
-                    Text("Tap to drop a pin")
-                        .font(.caption)
+                    if isGeocoding {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                            Text("Finding location...")
+                                .font(.caption)
+                        }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(Color(.systemBackground).opacity(0.9))
                         .cornerRadius(8)
                         .padding(.top, 12)
+                    } else if !resolvedName.isEmpty {
+                        Text(resolvedName)
+                            .font(.caption)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color(.systemBackground).opacity(0.9))
+                            .cornerRadius(8)
+                            .padding(.top, 12)
+                    } else {
+                        Text("Tap to drop a pin")
+                            .font(.caption)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color(.systemBackground).opacity(0.9))
+                            .cornerRadius(8)
+                            .padding(.top, 12)
+                    }
                     Spacer()
                 }
             }
@@ -261,13 +320,28 @@ private struct LocationPickerView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Confirm") {
                         coordinate = pinCoordinate
-                        if locationName.isEmpty, let pin = pinCoordinate {
-                            locationName = "\(String(format: "%.4f", pin.latitude)), \(String(format: "%.4f", pin.longitude))"
-                        }
+                        locationName = resolvedName
                         dismiss()
                     }
-                    .disabled(pinCoordinate == nil)
+                    .disabled(pinCoordinate == nil || isGeocoding)
                 }
+            }
+        }
+    }
+
+    private func reverseGeocode(_ coord: CLLocationCoordinate2D) {
+        isGeocoding = true
+        resolvedName = ""
+        let geocoder = CLGeocoder()
+        let location = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+        geocoder.reverseGeocodeLocation(location) { placemarks, _ in
+            isGeocoding = false
+            if let placemark = placemarks?.first {
+                var parts: [String] = []
+                if let name = placemark.name { parts.append(name) }
+                if let suburb = placemark.subLocality { parts.append(suburb) }
+                if let city = placemark.locality { parts.append(city) }
+                resolvedName = parts.joined(separator: ", ")
             }
         }
     }
