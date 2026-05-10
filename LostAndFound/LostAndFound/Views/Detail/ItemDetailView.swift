@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import FirebaseAuth
 
 struct ItemDetailView: View {
     let item: Item
@@ -17,12 +18,17 @@ struct ItemDetailView: View {
     @State private var showConfirm: Bool = false
     @State private var errorMessage: String? = nil
 
+    // Always read from the live repository so UI reflects Firestore updates instantly
+    private var liveItem: Item {
+        itemRepository.items.first { $0.id == item.id } ?? item
+    }
+
     private var isOwner: Bool {
-        authService.currentUser?.uid == item.postedBy
+        authService.currentUser?.uid == liveItem.postedBy
     }
 
     private var isResolved: Bool {
-        item.status == "resolved"
+        liveItem.status == "resolved"
     }
 
     var body: some View {
@@ -31,7 +37,7 @@ struct ItemDetailView: View {
 
                 // Type + Status banner
                 HStack {
-                    TypeBadge(type: item.type)
+                    TypeBadge(type: liveItem.type)
                     if isResolved {
                         Text("Resolved")
                             .font(.caption)
@@ -43,16 +49,16 @@ struct ItemDetailView: View {
                             .cornerRadius(6)
                     }
                     Spacer()
-                    CategoryBadge(category: item.category)
+                    CategoryBadge(category: liveItem.category)
                 }
 
                 // Title + Description
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(item.title)
+                    Text(liveItem.title)
                         .font(.title2)
                         .fontWeight(.bold)
 
-                    Text(item.description)
+                    Text(liveItem.description)
                         .font(.body)
                         .foregroundColor(.secondary)
                 }
@@ -61,12 +67,12 @@ struct ItemDetailView: View {
 
                 // Details
                 VStack(alignment: .leading, spacing: 12) {
-                    DetailRow(icon: "mappin.and.ellipse", label: "Location", value: item.location)
-                    DetailRow(icon: "person", label: "Posted by", value: item.postedByName)
+                    DetailRow(icon: "mappin.and.ellipse", label: "Location", value: liveItem.location)
+                    DetailRow(icon: "person", label: "Posted by", value: liveItem.postedByName)
                     DetailRow(
                         icon: "calendar",
                         label: "Date",
-                        value: item.createdAt.formatted(date: .long, time: .shortened)
+                        value: liveItem.createdAt.formatted(date: .long, time: .shortened)
                     )
                 }
 
@@ -86,7 +92,7 @@ struct ItemDetailView: View {
                                 .frame(maxWidth: .infinity)
                                 .padding()
                         } else {
-                            Text(item.type == "lost" ? "I Found This" : "This Is Mine")
+                            Text(liveItem.type == "lost" ? "I Found This" : "This Is Mine")
                                 .frame(maxWidth: .infinity)
                                 .padding()
                                 .background(Color.blue)
@@ -121,7 +127,7 @@ struct ItemDetailView: View {
         isClaiming = true
         errorMessage = nil
         do {
-            try await itemRepository.markResolved(item)
+            try await itemRepository.markResolved(liveItem)
         } catch {
             errorMessage = error.localizedDescription
         }

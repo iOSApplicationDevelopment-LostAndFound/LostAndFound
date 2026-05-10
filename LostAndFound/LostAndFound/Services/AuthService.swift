@@ -55,6 +55,11 @@ class AuthService: ObservableObject {
             let result = try await Auth.auth().createUser(withEmail: email, password: password)
             let uid = result.user.uid
 
+            // Set display name on the Firebase Auth profile so user.displayName is available
+            let changeRequest = result.user.createProfileChangeRequest()
+            changeRequest.displayName = displayName
+            try await changeRequest.commitChanges()
+
             // Save user profile to Firestore
             let userData: [String: Any] = [
                 "uid": uid,
