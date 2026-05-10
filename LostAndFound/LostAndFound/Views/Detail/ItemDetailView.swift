@@ -6,33 +6,19 @@
 //
 
 import SwiftUI
-import FirebaseAuth
-
 
 struct ItemDetailView: View {
     let item: Item
 
     @EnvironmentObject var authService: AuthService
     @EnvironmentObject var itemRepository: ItemRepository
-
-    @State private var isClaiming: Bool = false
-    @State private var showConfirm: Bool = false
-    @State private var errorMessage: String? = nil
-
-    // Always read from the live repository so UI reflects Firestore updates instantly
-    private var liveItem: Item {
-        itemRepository.items.first { $0.id == item.id } ?? item
-    }
-
-    private var isOwner: Bool {
-        authService.currentUser?.uid == liveItem.postedBy
-    }
-
-    private var isResolved: Bool {
-        liveItem.status == "resolved"
-    }
+    @StateObject private var viewModel = ItemDetailViewModel()
 
     var body: some View {
+        let liveItem = viewModel.liveItem(from: itemRepository, fallback: item)
+        let isOwner = viewModel.isOwner(item: liveItem, currentUserUID: authService.currentUser?.uid)
+        let isResolved = liveItem.status == "resolved"
+
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
 
@@ -77,7 +63,7 @@ struct ItemDetailView: View {
                     )
                 }
 
-                if let error = errorMessage {
+                if let error = viewModel.errorMessage {
                     Text(error)
                         .font(.caption)
                         .foregroundColor(.red)
@@ -86,9 +72,9 @@ struct ItemDetailView: View {
                 // Claim button — only shown to non-owners on active items
                 if !isOwner && !isResolved {
                     Button {
-                        showConfirm = true
+                        viewModel.showConfirm = true
                     } label: {
-                        if isClaiming {
+                        if viewModel.isClaiming {
                             ProgressView()
                                 .frame(maxWidth: .infinity)
                                 .padding()
@@ -102,7 +88,7 @@ struct ItemDetailView: View {
                                 .fontWeight(.semibold)
                         }
                     }
-                    .disabled(isClaiming)
+                    .disabled(viewModel.isClaiming)
                 }
 
                 Spacer()
@@ -114,25 +100,16 @@ struct ItemDetailView: View {
         .background(Color(.systemGroupedBackground))
         .confirmationDialog(
             "Mark this item as resolved?",
-            isPresented: $showConfirm,
+            isPresented: $viewModel.showConfirm,
             titleVisibility: .visible
         ) {
             Button("Yes, mark as resolved") {
-                Task { await claimItem() }
+                Task {
+                    await viewModel.claimItem(liveItem, using: itemRepository)
+                }
             }
             Button("Cancel", role: .cancel) {}
         }
-    }
-
-    private func claimItem() async {
-        isClaiming = true
-        errorMessage = nil
-        do {
-            try await itemRepository.markResolved(liveItem)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-        isClaiming = false
     }
 }
 

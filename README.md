@@ -30,11 +30,12 @@ A UTS campus iOS app where students can report lost items, post found items, bro
 
 ## Architecture
 
-MVVM pattern throughout:
+MVVM + Repository pattern:
 
-- **Models** — `Item`, `AppUser` (value types, Firestore encode/decode)
-- **ViewModels** — `AuthService`, `ItemRepository`, `LocationManager`
-- **Views** — SwiftUI views consuming published state from the ViewModels
+- **Models** — `Item`, `AppUser`
+- **Services** — `AuthService`, `ItemRepository`, `LocationManager`
+- **ViewModels** — `HomeViewModel`, `ItemDetailViewModel`
+- **Views** — SwiftUI views
 
 ---
 

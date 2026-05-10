@@ -9,40 +9,21 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject var itemRepository: ItemRepository
-
-    @State private var searchText: String = ""
-    @State private var selectedType: String? = nil      // nil = all, "lost", "found"
-    @State private var selectedCategory: String? = nil
-
-    let categories = ["bag", "electronics", "keys", "clothing", "other"]
-
-    var filteredItems: [Item] {
-        itemRepository.items.filter { item in
-            let matchesSearch = searchText.isEmpty
-                || item.title.localizedCaseInsensitiveContains(searchText)
-                || item.description.localizedCaseInsensitiveContains(searchText)
-                || item.location.localizedCaseInsensitiveContains(searchText)
-
-            let matchesType = selectedType == nil || item.type == selectedType
-            let matchesCategory = selectedCategory == nil || item.category == selectedCategory
-
-            return matchesSearch && matchesType && matchesCategory && item.status == "active"
-        }
-    }
+    @StateObject private var viewModel = HomeViewModel()
 
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
                 // Type filter toggle
                 HStack(spacing: 8) {
-                    TypeFilterButton(label: "All", isSelected: selectedType == nil) {
-                        selectedType = nil
+                    TypeFilterButton(label: "All", isSelected: viewModel.selectedType == nil) {
+                        viewModel.selectedType = nil
                     }
-                    TypeFilterButton(label: "Lost", isSelected: selectedType == "lost") {
-                        selectedType = selectedType == "lost" ? nil : "lost"
+                    TypeFilterButton(label: "Lost", isSelected: viewModel.selectedType == "lost") {
+                        viewModel.selectedType = viewModel.selectedType == "lost" ? nil : "lost"
                     }
-                    TypeFilterButton(label: "Found", isSelected: selectedType == "found") {
-                        selectedType = selectedType == "found" ? nil : "found"
+                    TypeFilterButton(label: "Found", isSelected: viewModel.selectedType == "found") {
+                        viewModel.selectedType = viewModel.selectedType == "found" ? nil : "found"
                     }
                     Spacer()
                 }
@@ -51,12 +32,12 @@ struct HomeView: View {
                 // Category pills
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(categories, id: \.self) { category in
+                        ForEach(viewModel.categories, id: \.self) { category in
                             CategoryPill(
                                 label: category.capitalized,
-                                isSelected: selectedCategory == category
+                                isSelected: viewModel.selectedCategory == category
                             ) {
-                                selectedCategory = selectedCategory == category ? nil : category
+                                viewModel.selectedCategory = viewModel.selectedCategory == category ? nil : category
                             }
                         }
                     }
@@ -67,7 +48,7 @@ struct HomeView: View {
                 if itemRepository.isLoading {
                     ProgressView()
                         .padding(.top, 40)
-                } else if filteredItems.isEmpty {
+                } else if viewModel.filteredItems(from: itemRepository.items).isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 40))
@@ -78,7 +59,7 @@ struct HomeView: View {
                     .padding(.top, 60)
                 } else {
                     LazyVStack(spacing: 12) {
-                        ForEach(filteredItems) { item in
+                        ForEach(viewModel.filteredItems(from: itemRepository.items)) { item in
                             NavigationLink(destination: ItemDetailView(item: item)) {
                                 ItemCard(item: item)
                                     .padding(.horizontal)
@@ -91,7 +72,7 @@ struct HomeView: View {
             .padding(.vertical, 12)
         }
         .navigationTitle("Lost & Found")
-        .searchable(text: $searchText, prompt: "Search items...")
+        .searchable(text: $viewModel.searchText, prompt: "Search items...")
         .background(Color(.systemGroupedBackground))
     }
 }
