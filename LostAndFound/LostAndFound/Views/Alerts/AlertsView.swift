@@ -79,11 +79,11 @@ struct AlertsView: View {
         isLoading = true
         db.collection("notifications")
             .whereField("userId", isEqualTo: uid)
-            .order(by: "createdAt", descending: true)
             .addSnapshotListener { snapshot, _ in
                 isLoading = false
                 guard let docs = snapshot?.documents else { return }
                 notifications = docs.compactMap { AlertNotification(id: $0.documentID, data: $0.data()) }
+                    .sorted { $0.createdAt > $1.createdAt }
             }
     }
 
