@@ -7,11 +7,17 @@
 
 import Foundation
 import Combine
+import FirebaseFirestore
+
 @MainActor
 class ItemDetailViewModel: ObservableObject {
     @Published var isClaiming: Bool = false
     @Published var showConfirm: Bool = false
+    @Published var isNotifying: Bool = false
+    @Published var hasNotified: Bool = false
     @Published var errorMessage: String? = nil
+
+    private let db = Firestore.firestore()
 
     func liveItem(from repository: ItemRepository, fallback: Item) -> Item {
         repository.items.first { $0.id == fallback.id } ?? fallback
@@ -30,5 +36,30 @@ class ItemDetailViewModel: ObservableObject {
             errorMessage = error.localizedDescription
         }
         isClaiming = false
+    }
+
+    func notifyOwner(item: Item, claimerName: String) async {
+        isNotifying = true
+        errorMessage = nil
+        let title = item.type == "lost" ? "Someone found your item!" : "Someone claims this is theirs!"
+        let message = item.type == "lost"
+            ? "\(claimerName) says they found your \(item.title). Please get in touch!"
+            : "\(claimerName) says your \(item.title) belongs to them. Please get in touch!"
+
+        let notifData: [String: Any] = [
+            "userId": item.postedBy,
+            "type": "match",
+            "title": title,
+            "message": message,
+            "createdAt": Timestamp(date: Date()),
+            "isRead": false
+        ]
+        do {
+            try await db.collection("notifications").addDocument(data: notifData)
+            hasNotified = true
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isNotifying = false
     }
 }

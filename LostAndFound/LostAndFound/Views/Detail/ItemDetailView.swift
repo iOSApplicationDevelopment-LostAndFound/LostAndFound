@@ -100,6 +100,53 @@ struct ItemDetailView: View {
                         .disabled(viewModel.isClaiming)
                     }
 
+                    // Notify owner — shown to non-owners on active items
+                    if !isOwner && !isResolved {
+                        if viewModel.hasNotified {
+                            HStack {
+                                Image(systemName: "bell.fill")
+                                    .foregroundColor(.blue)
+                                Text("Owner has been notified!")
+                                    .font(.subheadline)
+                                    .foregroundColor(.blue)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue.opacity(0.1))
+                            .cornerRadius(12)
+                        } else {
+                            Button {
+                                Task {
+                                    let name = authService.currentUser?.displayName
+                                        ?? authService.currentUser?.email
+                                        ?? "Someone"
+                                    await viewModel.notifyOwner(item: liveItem, claimerName: name)
+                                }
+                            } label: {
+                                if viewModel.isNotifying {
+                                    ProgressView()
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
+                                } else {
+                                    Text(liveItem.type == "lost" ? "I Found This" : "This Is Mine")
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
+                                        .background(Color.blue)
+                                        .foregroundColor(.white)
+                                        .cornerRadius(12)
+                                        .fontWeight(.semibold)
+                                }
+                            }
+                            .disabled(viewModel.isNotifying)
+
+                            Text("By tapping this, you confirm this item belongs to you or you have found it. The owner will be notified to arrange a handover.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 8)
+                        }
+                    }
+
                     if isResolved {
                         HStack {
                             Image(systemName: "checkmark.circle.fill")
