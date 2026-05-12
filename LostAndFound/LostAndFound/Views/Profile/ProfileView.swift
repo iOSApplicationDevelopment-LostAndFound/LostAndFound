@@ -18,7 +18,7 @@ struct ProfileView: View {
     }
 
     var lostCount: Int { myItems.filter { $0.type == "lost" }.count }
-    var returnedCount: Int { myItems.filter { $0.status == "resolved" }.count }
+    var foundCount: Int { myItems.filter { $0.type == "found" }.count }
     var totalCount: Int { myItems.count }
 
     var displayName: String {
@@ -36,54 +36,80 @@ struct ProfileView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                VStack(spacing: 10) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.blue)
-                            .frame(width: 64, height: 64)
-                        Text(initials.isEmpty ? "?" : initials)
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
+            VStack(spacing: 20) {
+                VStack(spacing: 0) {
+                    ZStack(alignment: .bottomTrailing) {
+                        ZStack {
+                            Circle()
+                                .fill(LinearGradient(colors: [.blue, .blue.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                .frame(width: 80, height: 80)
+                                .shadow(color: .blue.opacity(0.3), radius: 8, x: 0, y: 4)
+                            Text(initials.isEmpty ? "?" : initials)
+                                .font(.title)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
+                        }
+
+                        ZStack {
+                            Circle()
+                                .fill(Color(.systemBackground))
+                                .frame(width: 26, height: 26)
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 12))
+                                .foregroundColor(.blue)
+                        }
+                        .offset(x: 2, y: 2)
                     }
+                    .padding(.bottom, 12)
+
                     Text(displayName)
                         .font(.title3)
-                        .fontWeight(.semibold)
+                        .fontWeight(.bold)
+
                     Text(authService.currentUser?.email ?? "")
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundColor(.secondary)
+                        .padding(.top, 2)
                 }
-                .padding(.top, 8)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+                .background(Color(.systemBackground))
+                .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
 
                 HStack(spacing: 12) {
-                    StatCard(value: lostCount, label: "Items Lost", color: .red)
-                    StatCard(value: returnedCount, label: "Returned", color: .green)
-                    StatCard(value: totalCount, label: "Posts Total", color: .blue)
+                    StatCard(value: lostCount, label: "Lost", color: .red)
+                    StatCard(value: foundCount, label: "Found", color: .green)
+                    StatCard(value: totalCount, label: "Total", color: .blue)
                 }
                 .padding(.horizontal)
 
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 12) {
                     Text("My Posts")
                         .font(.headline)
                         .padding(.horizontal)
 
                     if myItems.isEmpty {
-                        VStack(spacing: 8) {
+                        VStack(spacing: 10) {
                             Image(systemName: "tray")
-                                .font(.system(size: 32))
+                                .font(.system(size: 36))
                                 .foregroundColor(.secondary)
                             Text("No posts yet")
                                 .foregroundColor(.secondary)
                                 .font(.subheadline)
+                            Text("Start by posting a lost or found item")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 32)
+                        .padding(.vertical, 40)
                     } else {
                         LazyVStack(spacing: 10) {
                             ForEach(myItems) { item in
-                                MyItemRow(item: item)
-                                    .padding(.horizontal)
+                                NavigationLink(destination: ItemDetailView(item: item)) {
+                                    MyItemRow(item: item)
+                                        .padding(.horizontal)
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -92,15 +118,19 @@ struct ProfileView: View {
                 Button {
                     authService.signOut()
                 } label: {
-                    Text("Sign Out")
-                        .foregroundColor(.red)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color(.systemBackground))
-                        .cornerRadius(12)
-                        .padding(.horizontal)
+                    HStack {
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                        Text("Sign Out")
+                    }
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color(.systemBackground))
+                    .cornerRadius(12)
+                    .shadow(color: .black.opacity(0.04), radius: 4)
+                    .padding(.horizontal)
                 }
-                .padding(.bottom, 16)
+                .padding(.bottom, 20)
             }
         }
         .navigationTitle("Profile")
@@ -136,10 +166,44 @@ private struct MyItemRow: View {
     let item: Item
 
     var typeColor: Color { item.type == "lost" ? .red : .green }
-    var statusColor: Color { item.status == "resolved" ? .secondary : typeColor }
+
+    private var categoryIcon: String {
+        switch item.category {
+        case "bag":         return "backpack.fill"
+        case "electronics": return "laptopcomputer"
+        case "keys":        return "key.fill"
+        case "clothing":    return "tshirt.fill"
+        default:            return "shippingbox.fill"
+        }
+    }
+
+    private var categoryColor: Color {
+        switch item.category {
+        case "bag":         return .orange
+        case "electronics": return .purple
+        case "keys":        return Color(red: 0.7, green: 0.6, blue: 0.1)
+        case "clothing":    return .blue
+        default:            return .gray
+        }
+    }
+
+    var timeAgo: String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: item.createdAt, relativeTo: Date())
+    }
 
     var body: some View {
         HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(categoryColor.opacity(0.12))
+                    .frame(width: 46, height: 46)
+                Image(systemName: categoryIcon)
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(categoryColor)
+            }
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.title)
                     .font(.subheadline)
@@ -148,8 +212,11 @@ private struct MyItemRow: View {
                 Label(item.location, systemImage: "mappin.and.ellipse")
                     .font(.caption)
                     .foregroundColor(.secondary)
+                    .lineLimit(1)
             }
+
             Spacer()
+
             VStack(alignment: .trailing, spacing: 4) {
                 Text(item.type.capitalized)
                     .font(.caption)
@@ -159,9 +226,9 @@ private struct MyItemRow: View {
                     .background(typeColor.opacity(0.12))
                     .foregroundColor(typeColor)
                     .cornerRadius(6)
-                Text(item.status.capitalized)
+                Text(item.status == "resolved" ? "Resolved" : timeAgo)
                     .font(.caption2)
-                    .foregroundColor(item.status == "resolved" ? .secondary : typeColor)
+                    .foregroundColor(item.status == "resolved" ? .green : .secondary)
             }
         }
         .padding(12)

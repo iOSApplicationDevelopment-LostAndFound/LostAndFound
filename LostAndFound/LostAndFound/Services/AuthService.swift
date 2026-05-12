@@ -41,11 +41,23 @@ class AuthService: ObservableObject {
         isLoading = true
         errorMessage = nil
         do {
-            try await Auth.auth().signIn(withEmail: email, password: password)
+            let result = try await Auth.auth().signIn(withEmail: email, password: password)
+            if result.user.displayName == nil || result.user.displayName!.isEmpty {
+                await syncDisplayNameFromFirestore(uid: result.user.uid)
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+
+    private func syncDisplayNameFromFirestore(uid: String) async {
+        guard let doc = try? await db.collection("users").document(uid).getDocument(),
+              let name = doc.data()?["displayName"] as? String, !name.isEmpty else { return }
+        let changeRequest = Auth.auth().currentUser?.createProfileChangeRequest()
+        changeRequest?.displayName = name
+        try? await changeRequest?.commitChanges()
+        currentUser = Auth.auth().currentUser
     }
 
     func signUp(email: String, password: String, displayName: String) async {
