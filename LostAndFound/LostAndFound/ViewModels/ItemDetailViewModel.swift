@@ -38,13 +38,13 @@ class ItemDetailViewModel: ObservableObject {
         isClaiming = false
     }
 
-    func notifyOwner(item: Item, claimerName: String) async {
+    func notifyOwner(item: Item, claimerName: String, claimerEmail: String) async {
         isNotifying = true
         errorMessage = nil
         let title = item.type == "lost" ? "Someone found your item!" : "Someone claims this is theirs!"
         let message = item.type == "lost"
-            ? "\(claimerName) says they found your \(item.title). Please get in touch!"
-            : "\(claimerName) says your \(item.title) belongs to them. Please get in touch!"
+            ? "\(claimerName) says they found your \(item.title). Contact them at \(claimerEmail)"
+            : "\(claimerName) says your \(item.title) belongs to them. Contact them at \(claimerEmail)"
 
         let notifData: [String: Any] = [
             "userId": item.postedBy,
@@ -56,6 +56,10 @@ class ItemDetailViewModel: ObservableObject {
         ]
         do {
             try await db.collection("notifications").addDocument(data: notifData)
+            try await db.collection("items").document(item.id).updateData([
+                "claimedBy": claimerName,
+                "claimedByEmail": claimerEmail
+            ])
             hasNotified = true
         } catch {
             errorMessage = error.localizedDescription
