@@ -22,6 +22,8 @@ struct Item: Identifiable {
     var postedBy: String
     var postedByName: String
     var createdAt: Date
+    var claimedBy: String?
+    var claimedByEmail: String?
 
     init?(id: String, data: [String: Any]) {
         guard
@@ -49,6 +51,8 @@ struct Item: Identifiable {
         self.postedBy = postedBy
         self.postedByName = postedByName
         self.createdAt = createdAt
+        self.claimedBy = data["claimedBy"] as? String
+        self.claimedByEmail = data["claimedByEmail"] as? String
     }
 
     func toFirestore() -> [String: Any] {

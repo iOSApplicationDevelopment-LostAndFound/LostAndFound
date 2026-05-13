@@ -8,6 +8,7 @@
 import SwiftUI
 import MapKit
 import FirebaseAuth
+import FirebaseFirestore
 
 struct ItemDetailView: View {
     let item: Item
@@ -62,6 +63,10 @@ struct ItemDetailView: View {
                         DetailRow(icon: "person.fill", label: "Posted by", value: liveItem.postedByName)
                         Divider().padding(.leading, 32)
                         DetailRow(icon: "clock", label: "Posted", value: liveItem.createdAt.formatted(date: .long, time: .shortened))
+                        if !isOwner && viewModel.hasNotified {
+                            Divider().padding(.leading, 32)
+                            ContactRow(email: liveItem.postedBy)
+                        }
                     }
                     .padding(.vertical, 4)
                     .background(Color(.systemBackground))
@@ -120,7 +125,8 @@ struct ItemDetailView: View {
                                     let name = authService.currentUser?.displayName
                                         ?? authService.currentUser?.email
                                         ?? "Someone"
-                                    await viewModel.notifyOwner(item: liveItem, claimerName: name)
+                                    let email = authService.currentUser?.email ?? ""
+                                    await viewModel.notifyOwner(item: liveItem, claimerName: name, claimerEmail: email)
                                 }
                             } label: {
                                 if viewModel.isNotifying {
@@ -148,14 +154,31 @@ struct ItemDetailView: View {
                     }
 
                     if isResolved {
-                        HStack {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                            Text("This item has been resolved")
-                                .font(.subheadline)
-                                .foregroundColor(.green)
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("This item has been resolved")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.green)
+                            }
+                            if let claimedBy = liveItem.claimedBy, let claimedByEmail = liveItem.claimedByEmail {
+                                Divider()
+                                HStack(spacing: 4) {
+                                    Text("Claimed by")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Text(claimedBy)
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                }
+                                Text(claimedByEmail)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
                         }
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
                         .background(Color.green.opacity(0.1))
                         .cornerRadius(12)
@@ -250,6 +273,45 @@ private struct MiniMapView: View {
             .frame(height: 160)
             .cornerRadius(12)
         }
+    }
+}
+
+private struct ContactRow: View {
+    let email: String
+    @State private var posterEmail: String = ""
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "envelope.fill")
+                .frame(width: 20)
+                .foregroundColor(.blue)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Contact poster")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                if posterEmail.isEmpty {
+                    Text("Loading...")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                } else {
+                    Link(posterEmail, destination: URL(string: "mailto:\(posterEmail)")!)
+                        .font(.subheadline)
+                        .foregroundColor(.blue)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .task { await fetchEmail() }
+    }
+
+    private func fetchEmail() async {
+        let db = Firestore.firestore()
+        guard let doc = try? await db.collection("users").document(email).getDocument(),
+              let fetchedEmail = doc.data()?["email"] as? String else { return }
+        posterEmail = fetchedEmail
     }
 }
 
