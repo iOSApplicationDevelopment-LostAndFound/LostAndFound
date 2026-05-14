@@ -144,15 +144,6 @@ struct MapView: View {
                 cameraPosition = .region(MKCoordinateRegion(center: center, span: span))
             }
         }
-        .onReceive(locationManager.$userLocation) { location in
-            guard let coordinate = location?.coordinate else { return }
-            withAnimation {
-                cameraPosition = .region(MKCoordinateRegion(
-                    center: coordinate,
-                    span: MKCoordinateSpan(latitudeDelta: 0.006, longitudeDelta: 0.006)
-                ))
-            }
-        }
     }
 }
 
