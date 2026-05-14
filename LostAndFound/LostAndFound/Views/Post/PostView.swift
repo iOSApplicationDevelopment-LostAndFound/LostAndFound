@@ -13,6 +13,13 @@ import FirebaseAuth
 import FirebaseFirestore
 
 struct PostView: View {
+    private enum Field: Hashable {
+        case title
+        case description
+        case location
+        case buildingRoom
+    }
+
     @EnvironmentObject var itemRepository: ItemRepository
     @EnvironmentObject var authService: AuthService
     @Environment(\.dismiss) private var dismiss
@@ -30,6 +37,7 @@ struct PostView: View {
     @State private var isPosting: Bool = false
     @State private var errorMessage: String? = nil
     @State private var showSuccess: Bool = false
+    @FocusState private var focusedField: Field?
 
     let categories = ["bag", "electronics", "keys", "clothing", "other"]
 
@@ -82,11 +90,17 @@ struct PostView: View {
 
                 VStack(spacing: 10) {
                     TextField("Title", text: $title)
+                        .focused($focusedField, equals: .title)
+                        .submitLabel(.next)
+                        .onSubmit { focusedField = .description }
                         .padding()
                         .background(Color(.systemGray6))
                         .cornerRadius(10)
 
                     TextField("Description", text: $description, axis: .vertical)
+                        .focused($focusedField, equals: .description)
+                        .submitLabel(.next)
+                        .onSubmit { focusedField = .location }
                         .lineLimit(3...6)
                         .padding()
                         .background(Color(.systemGray6))
@@ -94,8 +108,12 @@ struct PostView: View {
 
                     HStack {
                         TextField("Location (tap map to auto-fill)", text: $location)
+                            .focused($focusedField, equals: .location)
+                            .submitLabel(.next)
+                            .onSubmit { focusedField = .buildingRoom }
                         Spacer()
                         Button {
+                            focusedField = nil
                             showLocationPicker = true
                         } label: {
                             Image(systemName: "map")
@@ -107,6 +125,9 @@ struct PostView: View {
                     .cornerRadius(10)
 
                     TextField("Building / Room (optional, e.g. CB04.03.01)", text: $buildingRoom)
+                        .focused($focusedField, equals: .buildingRoom)
+                        .submitLabel(.done)
+                        .onSubmit { focusedField = nil }
                         .padding()
                         .background(Color(.systemGray6))
                         .cornerRadius(10)
@@ -145,6 +166,7 @@ struct PostView: View {
                 }
 
                 Button {
+                    focusedField = nil
                     Task { await postItem() }
                 } label: {
                     if isPosting {
@@ -165,9 +187,18 @@ struct PostView: View {
             }
             .padding(.vertical, 14)
         }
+        .scrollDismissesKeyboard(.interactively)
         .navigationTitle("Post an Item")
         .navigationBarTitleDisplayMode(.inline)
         .background(Color(.systemGroupedBackground))
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    focusedField = nil
+                }
+            }
+        }
         .sheet(isPresented: $showLocationPicker) {
             LocationPickerView(coordinate: $pickedCoordinate, locationName: $location)
         }
@@ -194,6 +225,7 @@ struct PostView: View {
 
     private func postItem() async {
         guard let user = authService.currentUser else { return }
+        focusedField = nil
         isPosting = true
         errorMessage = nil
 
