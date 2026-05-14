@@ -37,14 +37,29 @@ struct AlertNotification: Identifiable {
 struct AlertsView: View {
     @State private var notifications: [AlertNotification] = []
     @State private var isLoading = false
+    @State private var errorMessage: String? = nil
+    @State private var listener: ListenerRegistration? = nil
     private let db = Firestore.firestore()
-    private var listener: ListenerRegistration?
 
     var body: some View {
         Group {
             if isLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let errorMessage {
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 44))
+                        .foregroundColor(.orange)
+                    Text("Alerts could not be loaded")
+                        .font(.headline)
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if notifications.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "bell.slash")
@@ -72,19 +87,31 @@ struct AlertsView: View {
         .navigationBarTitleDisplayMode(.large)
         .background(Color(.systemGroupedBackground))
         .onAppear { startListening() }
+        .onDisappear { stopListening() }
     }
 
     private func startListening() {
+        guard listener == nil else { return }
         guard let uid = Auth.auth().currentUser?.uid else { return }
         isLoading = true
-        db.collection("notifications")
+        errorMessage = nil
+        listener = db.collection("notifications")
             .whereField("userId", isEqualTo: uid)
-            .addSnapshotListener { snapshot, _ in
+            .addSnapshotListener { snapshot, error in
                 isLoading = false
+                if let error {
+                    errorMessage = error.localizedDescription
+                    return
+                }
                 guard let docs = snapshot?.documents else { return }
                 notifications = docs.compactMap { AlertNotification(id: $0.documentID, data: $0.data()) }
                     .sorted { $0.createdAt > $1.createdAt }
             }
+    }
+
+    private func stopListening() {
+        listener?.remove()
+        listener = nil
     }
 
     private func markAsRead(_ notification: AlertNotification) {
