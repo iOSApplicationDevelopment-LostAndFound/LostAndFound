@@ -19,6 +19,7 @@ struct Item: Identifiable {
     var latitude: Double?
     var longitude: Double?
     var photoURL: String?
+    var photoStoragePath: String?
     var postedBy: String
     var postedByName: String
     var createdAt: Date
@@ -48,6 +49,7 @@ struct Item: Identifiable {
         self.latitude = data["latitude"] as? Double
         self.longitude = data["longitude"] as? Double
         self.photoURL = data["photoURL"] as? String
+        self.photoStoragePath = data["photoStoragePath"] as? String
         self.postedBy = postedBy
         self.postedByName = postedByName
         self.createdAt = createdAt
@@ -70,6 +72,7 @@ struct Item: Identifiable {
         if let latitude = latitude { dict["latitude"] = latitude }
         if let longitude = longitude { dict["longitude"] = longitude }
         if let photoURL = photoURL { dict["photoURL"] = photoURL }
+        if let photoStoragePath = photoStoragePath { dict["photoStoragePath"] = photoStoragePath }
         return dict
     }
 }

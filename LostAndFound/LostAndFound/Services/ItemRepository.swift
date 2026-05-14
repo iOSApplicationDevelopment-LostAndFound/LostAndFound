@@ -8,6 +8,33 @@
 import Foundation
 import Combine
 import FirebaseFirestore
+import FirebaseStorage
+import UIKit
+
+private enum ItemRepositoryError: LocalizedError {
+    case invalidImageData
+    case imageUploadFailed(Error)
+    case itemCreateFailed(Error)
+    case itemCreateFailedRollbackFailed(createError: Error, rollbackError: Error)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidImageData:
+            return "Image upload failed. Please choose a different photo."
+        case .imageUploadFailed:
+            return "Image upload failed. Please try again or post without a photo."
+        case .itemCreateFailed:
+            return "Item could not be created. Please try again."
+        case .itemCreateFailedRollbackFailed:
+            return "Item could not be created, and the uploaded photo could not be cleaned up automatically."
+        }
+    }
+}
+
+private struct UploadedItemPhoto {
+    let downloadURL: String
+    let storagePath: String
+}
 
 @MainActor
 class ItemRepository: ObservableObject {
@@ -16,6 +43,7 @@ class ItemRepository: ObservableObject {
     @Published var errorMessage: String? = nil
 
     private let db = Firestore.firestore()
+    private let storage = Storage.storage()
     private var listener: ListenerRegistration? = nil
 
     init() {
@@ -52,6 +80,37 @@ class ItemRepository: ObservableObject {
         try await db.collection("items").document(item.id).setData(data)
     }
 
+    func createItem(_ item: Item, photoData: Data?) async throws {
+        guard let photoData else {
+            try await createItem(item)
+            return
+        }
+
+        let uploadedPhoto: UploadedItemPhoto
+        do {
+            uploadedPhoto = try await uploadItemPhoto(photoData, itemID: item.id, userID: item.postedBy)
+        } catch let error as ItemRepositoryError {
+            throw error
+        } catch {
+            throw ItemRepositoryError.imageUploadFailed(error)
+        }
+
+        var itemWithPhoto = item
+        itemWithPhoto.photoURL = uploadedPhoto.downloadURL
+        itemWithPhoto.photoStoragePath = uploadedPhoto.storagePath
+
+        do {
+            try await createItem(itemWithPhoto)
+        } catch let createError {
+            do {
+                try await deleteItemPhoto(at: uploadedPhoto.storagePath)
+            } catch let rollbackError {
+                throw ItemRepositoryError.itemCreateFailedRollbackFailed(createError: createError, rollbackError: rollbackError)
+            }
+            throw ItemRepositoryError.itemCreateFailed(createError)
+        }
+    }
+
     func updateItem(_ item: Item) async throws {
         let data = item.toFirestore()
         try await db.collection("items").document(item.id).updateData(data)
@@ -65,5 +124,29 @@ class ItemRepository: ObservableObject {
         try await db.collection("items").document(item.id).updateData([
             "status": "resolved"
         ])
+    }
+
+    private func uploadItemPhoto(_ photoData: Data, itemID: String, userID: String) async throws -> UploadedItemPhoto {
+        guard let image = UIImage(data: photoData),
+              let uploadData = image.jpegData(compressionQuality: 0.82) else {
+            throw ItemRepositoryError.invalidImageData
+        }
+
+        let storagePath = "item-images/\(userID)/\(itemID).jpg"
+        let reference = storage.reference(withPath: storagePath)
+        let metadata = StorageMetadata()
+        metadata.contentType = "image/jpeg"
+
+        do {
+            _ = try await reference.putDataAsync(uploadData, metadata: metadata)
+            let downloadURL = try await reference.downloadURL()
+            return UploadedItemPhoto(downloadURL: downloadURL.absoluteString, storagePath: storagePath)
+        } catch {
+            throw ItemRepositoryError.imageUploadFailed(error)
+        }
+    }
+
+    private func deleteItemPhoto(at storagePath: String) async throws {
+        try await storage.reference(withPath: storagePath).delete()
     }
 }

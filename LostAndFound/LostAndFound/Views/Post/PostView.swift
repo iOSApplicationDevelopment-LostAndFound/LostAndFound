@@ -35,6 +35,8 @@ struct PostView: View {
     @State private var buildingRoom: String = ""
     @State private var showLocationPicker: Bool = false
     @State private var isPosting: Bool = false
+    @State private var isLoadingPhoto: Bool = false
+    @State private var photoLoadID: UUID? = nil
     @State private var errorMessage: String? = nil
     @State private var showSuccess: Bool = false
     @FocusState private var focusedField: Field?
@@ -45,6 +47,10 @@ struct PostView: View {
         !title.trimmingCharacters(in: .whitespaces).isEmpty &&
         !description.trimmingCharacters(in: .whitespaces).isEmpty &&
         !location.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    var canPost: Bool {
+        isFormValid && !isLoadingPhoto && !isPosting && (selectedPhoto == nil || selectedPhotoData != nil)
     }
 
     var body: some View {
@@ -63,7 +69,14 @@ struct PostView: View {
                             .fill(Color(.systemGray5))
                             .frame(height: 120)
 
-                        if let data = selectedPhotoData, let uiImage = UIImage(data: data) {
+                        if isLoadingPhoto {
+                            VStack(spacing: 8) {
+                                ProgressView()
+                                Text("Loading photo...")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } else if let data = selectedPhotoData, let uiImage = UIImage(data: data) {
                             Image(uiImage: uiImage)
                                 .resizable()
                                 .scaledToFill()
@@ -83,8 +96,32 @@ struct PostView: View {
                 }
                 .padding(.horizontal)
                 .onChange(of: selectedPhoto) { _, item in
+                    let loadID = UUID()
+                    photoLoadID = loadID
+                    selectedPhotoData = nil
+                    guard let item else {
+                        isLoadingPhoto = false
+                        return
+                    }
+
+                    isLoadingPhoto = true
+                    errorMessage = nil
+
                     Task {
-                        selectedPhotoData = try? await item?.loadTransferable(type: Data.self)
+                        do {
+                            guard let data = try await item.loadTransferable(type: Data.self) else {
+                                throw CocoaError(.fileReadCorruptFile)
+                            }
+                            guard photoLoadID == loadID else { return }
+                            selectedPhotoData = data
+                            isLoadingPhoto = false
+                        } catch {
+                            guard photoLoadID == loadID else { return }
+                            selectedPhotoData = nil
+                            selectedPhoto = nil
+                            isLoadingPhoto = false
+                            errorMessage = "Photo could not be loaded. Please choose a different image."
+                        }
                     }
                 }
 
@@ -177,12 +214,12 @@ struct PostView: View {
                         Text("Post Item")
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(isFormValid ? Color.blue : Color(.systemGray4))
+                            .background(canPost ? Color.blue : Color(.systemGray4))
                             .foregroundColor(.white)
                             .cornerRadius(12)
                     }
                 }
-                .disabled(!isFormValid || isPosting)
+                .disabled(!canPost)
                 .padding(.horizontal)
             }
             .padding(.vertical, 14)
@@ -229,6 +266,12 @@ struct PostView: View {
         isPosting = true
         errorMessage = nil
 
+        if selectedPhoto != nil && selectedPhotoData == nil {
+            isPosting = false
+            errorMessage = "Please wait for the selected photo to finish loading."
+            return
+        }
+
         let fullLocation = buildingRoom.trimmingCharacters(in: .whitespaces).isEmpty
             ? location
             : "\(location), \(buildingRoom)"
@@ -249,7 +292,7 @@ struct PostView: View {
 
         do {
             if let item = newItem {
-                try await itemRepository.createItem(item)
+                try await itemRepository.createItem(item, photoData: selectedPhotoData)
                 resetForm()
                 withAnimation { showSuccess = true }
                 try? await Task.sleep(nanoseconds: 2_500_000_000)
@@ -270,6 +313,8 @@ struct PostView: View {
         itemType = "lost"
         selectedPhoto = nil
         selectedPhotoData = nil
+        isLoadingPhoto = false
+        photoLoadID = nil
         pickedCoordinate = nil
     }
 }

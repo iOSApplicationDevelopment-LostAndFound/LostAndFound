@@ -24,7 +24,7 @@ struct ItemDetailView: View {
 
         ScrollView {
             VStack(spacing: 0) {
-                CategoryHeader(category: liveItem.category)
+                ItemHeader(item: liveItem)
 
                 VStack(alignment: .leading, spacing: 16) {
                     // Type + Status banner
@@ -199,6 +199,37 @@ struct ItemDetailView: View {
                 Task { await viewModel.claimItem(liveItem, using: itemRepository) }
             }
             Button("Cancel", role: .cancel) {}
+        }
+    }
+}
+
+private struct ItemHeader: View {
+    let item: Item
+
+    var body: some View {
+        if let photoURL = item.photoURL, let url = URL(string: photoURL) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .empty:
+                    ZStack {
+                        Color(.systemGray5)
+                        ProgressView()
+                    }
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                case .failure:
+                    CategoryHeader(category: item.category)
+                @unknown default:
+                    CategoryHeader(category: item.category)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 190)
+            .clipped()
+        } else {
+            CategoryHeader(category: item.category)
         }
     }
 }

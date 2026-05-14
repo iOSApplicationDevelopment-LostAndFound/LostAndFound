@@ -18,7 +18,7 @@ struct ItemCard: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            CategoryThumbnail(category: item.category)
+            ItemThumbnail(item: item)
 
             VStack(alignment: .leading, spacing: 5) {
                 HStack {
@@ -54,6 +54,38 @@ struct ItemCard: View {
         .background(Color(.systemBackground))
         .cornerRadius(14)
         .shadow(color: Color.black.opacity(0.07), radius: 6, x: 0, y: 3)
+    }
+}
+
+private struct ItemThumbnail: View {
+    let item: Item
+
+    var body: some View {
+        if let photoURL = item.photoURL, let url = URL(string: photoURL) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .empty:
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color(.systemGray5))
+                        ProgressView()
+                            .scaleEffect(0.7)
+                    }
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                case .failure:
+                    CategoryThumbnail(category: item.category)
+                @unknown default:
+                    CategoryThumbnail(category: item.category)
+                }
+            }
+            .frame(width: 54, height: 54)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        } else {
+            CategoryThumbnail(category: item.category)
+        }
     }
 }
 
