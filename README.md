@@ -2,7 +2,7 @@
 
 **GitHub Repository:** https://github.com/iOSApplicationDevelopment-LostAndFound/LostAndFound
 
-A UTS campus iOS app where students can report lost items, post found items, browse a live feed, and claim items that belong to them.
+A UTS campus iOS app where students can report lost items, post found items, browse a live feed, manage their own posts, and claim items that belong to them.
 
 ---
 
@@ -22,6 +22,7 @@ A UTS campus iOS app where students can report lost items, post found items, bro
 | **SwiftUI** | All UI screens and navigation |
 | **Firebase Authentication** | Email and password sign-in and registration |
 | **Cloud Firestore** | Real-time NoSQL database for items and user profiles |
+| **Firebase Storage** | Stores uploaded item photos |
 | **MapKit** | Interactive map view with pins for item locations |
 | **PhotosUI** | Photo picker for attaching images when posting an item |
 | **CoreLocation** | User location for the map and location picker |
@@ -32,7 +33,7 @@ A UTS campus iOS app where students can report lost items, post found items, bro
 
 MVVM + Repository pattern:
 
-- **Models** — `Item`, `AppUser`
+- **Models** — `Item`, `AppUser`, `ItemOwnership`
 - **Services** — `AuthService`, `ItemRepository`, `LocationManager`
 - **ViewModels** — `HomeViewModel`, `ItemDetailViewModel`
 - **Views** — SwiftUI views
@@ -44,11 +45,28 @@ MVVM + Repository pattern:
 - Register and sign in with email and password
 - Browse a live feed of lost and found items, updated in real time via Firestore listeners
 - Search by keyword and filter by type (Lost / Found) and category
-- View full item details and claim an item
+- View full item details and notify the owner when an item may be matched
 - Post a lost or found item with photo, category, and map pin
-- View item locations on an interactive map
-- Receive alerts for matching items
+- Edit your own posts from the item detail page
+- Delete your own posts from the item detail page or by swiping left on owned rows in Home/Profile
+- Delete item photos from Firebase Storage when removing a post
+- View active item locations on an interactive map
+- Pan and zoom around the map freely, then use the map's user-location button to return to your location
+- Receive in-app alerts when another user taps the detail-page match/claim action for one of your posts
+- Mark alerts as read by tapping them
 - Profile page showing your posts and stats
+
+---
+
+## Notifications Status
+
+The Alerts tab is implemented as an in-app Firestore notification list:
+
+- `ItemDetailViewModel.notifyOwner(...)` writes documents into the `notifications` collection.
+- `AlertsView` listens for notifications where `userId` matches the signed-in Firebase Auth user.
+- Alerts are sorted newest-first and can be marked as read by tapping the row.
+- The current implementation is not a push-notification system; alerts appear when the app is open and the Firestore listener receives updates.
+- Notification delivery depends on Firestore/Auth being configured and the app having permission to read/write the `notifications` collection.
 
 ---
 
@@ -60,6 +78,12 @@ MVVM + Repository pattern:
 4. Build and run on a simulator or device running iOS 16 or later
 
 > Firebase project: `lost-and-found-uts` — Firestore region: `australia-southeast1`
+
+Firebase services used by the app:
+
+- Authentication: email/password users
+- Firestore: `items`, `users`, and `notifications`
+- Storage: uploaded item images under `item-images/{userID}/{itemID}.jpg`
 
 ---
 
