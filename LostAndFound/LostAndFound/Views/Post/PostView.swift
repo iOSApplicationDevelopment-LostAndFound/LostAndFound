@@ -24,14 +24,18 @@ struct PostView: View {
     @EnvironmentObject var authService: AuthService
     @Environment(\.dismiss) private var dismiss
 
-    @State private var itemType: String = "lost"
-    @State private var title: String = ""
-    @State private var description: String = ""
-    @State private var location: String = ""
-    @State private var selectedCategory: String = "other"
+    private let editingItem: Item?
+
+    @State private var itemType: String
+    @State private var itemStatus: String
+    @State private var title: String
+    @State private var description: String
+    @State private var location: String
+    @State private var selectedCategory: String
     @State private var selectedPhoto: PhotosPickerItem? = nil
     @State private var selectedPhotoData: Data? = nil
-    @State private var pickedCoordinate: CLLocationCoordinate2D? = nil
+    @State private var pickedCoordinate: CLLocationCoordinate2D?
+    @State private var shouldPreservePickedCoordinateForNextLocationChange: Bool = false
     @State private var buildingRoom: String = ""
     @State private var showLocationPicker: Bool = false
     @State private var isPosting: Bool = false
@@ -41,16 +45,46 @@ struct PostView: View {
     @State private var showSuccess: Bool = false
     @FocusState private var focusedField: Field?
 
-    let categories = ["bag", "electronics", "keys", "clothing", "other"]
+    private let categories = ["bag", "electronics", "keys", "clothing", "other"]
 
-    var isFormValid: Bool {
+    init(editingItem: Item? = nil) {
+        self.editingItem = editingItem
+        _itemType = State(initialValue: editingItem?.type ?? "lost")
+        _itemStatus = State(initialValue: editingItem?.status ?? "active")
+        _title = State(initialValue: editingItem?.title ?? "")
+        _description = State(initialValue: editingItem?.description ?? "")
+        _location = State(initialValue: editingItem?.location ?? "")
+        _selectedCategory = State(initialValue: editingItem?.category ?? "other")
+        _pickedCoordinate = State(initialValue: editingItem.flatMap { item in
+            guard let latitude = item.latitude, let longitude = item.longitude else { return nil }
+            return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+        })
+    }
+
+    private var isEditing: Bool {
+        editingItem != nil
+    }
+
+    private var isFormValid: Bool {
         !title.trimmingCharacters(in: .whitespaces).isEmpty &&
         !description.trimmingCharacters(in: .whitespaces).isEmpty &&
         !location.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
-    var canPost: Bool {
+    private var canSubmit: Bool {
         isFormValid && !isLoadingPhoto && !isPosting && (selectedPhoto == nil || selectedPhotoData != nil)
+    }
+
+    private var navigationTitle: String {
+        isEditing ? "Edit Item" : "Post an Item"
+    }
+
+    private var submitTitle: String {
+        isEditing ? "Save Changes" : "Post Item"
+    }
+
+    private var successMessage: String {
+        isEditing ? "Item updated successfully!" : "Item posted successfully!"
     }
 
     var body: some View {
@@ -63,67 +97,16 @@ struct PostView: View {
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
 
-                PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color(.systemGray5))
-                            .frame(height: 120)
-
-                        if isLoadingPhoto {
-                            VStack(spacing: 8) {
-                                ProgressView()
-                                Text("Loading photo...")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        } else if let data = selectedPhotoData, let uiImage = UIImage(data: data) {
-                            Image(uiImage: uiImage)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(height: 120)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                        } else {
-                            VStack(spacing: 6) {
-                                Image(systemName: "camera")
-                                    .font(.system(size: 28))
-                                    .foregroundColor(.secondary)
-                                Text("Tap to add photo")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
+                if isEditing {
+                    Picker("Status", selection: $itemStatus) {
+                        Text("Active").tag("active")
+                        Text("Resolved").tag("resolved")
                     }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
                 }
-                .padding(.horizontal)
-                .onChange(of: selectedPhoto) { _, item in
-                    let loadID = UUID()
-                    photoLoadID = loadID
-                    selectedPhotoData = nil
-                    guard let item else {
-                        isLoadingPhoto = false
-                        return
-                    }
 
-                    isLoadingPhoto = true
-                    errorMessage = nil
-
-                    Task {
-                        do {
-                            guard let data = try await item.loadTransferable(type: Data.self) else {
-                                throw CocoaError(.fileReadCorruptFile)
-                            }
-                            guard photoLoadID == loadID else { return }
-                            selectedPhotoData = data
-                            isLoadingPhoto = false
-                        } catch {
-                            guard photoLoadID == loadID else { return }
-                            selectedPhotoData = nil
-                            selectedPhoto = nil
-                            isLoadingPhoto = false
-                            errorMessage = "Photo could not be loaded. Please choose a different image."
-                        }
-                    }
-                }
+                photoPicker
 
                 VStack(spacing: 10) {
                     TextField("Title", text: $title)
@@ -204,28 +187,28 @@ struct PostView: View {
 
                 Button {
                     focusedField = nil
-                    Task { await postItem() }
+                    Task { await submitItem() }
                 } label: {
                     if isPosting {
                         ProgressView()
                             .frame(maxWidth: .infinity)
                             .padding()
                     } else {
-                        Text("Post Item")
+                        Text(submitTitle)
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(canPost ? Color.blue : Color(.systemGray4))
+                            .background(canSubmit ? Color.blue : Color(.systemGray4))
                             .foregroundColor(.white)
                             .cornerRadius(12)
                     }
                 }
-                .disabled(!canPost)
+                .disabled(!canSubmit)
                 .padding(.horizontal)
             }
             .padding(.vertical, 14)
         }
         .scrollDismissesKeyboard(.interactively)
-        .navigationTitle("Post an Item")
+        .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
         .background(Color(.systemGroupedBackground))
         .toolbar {
@@ -236,15 +219,29 @@ struct PostView: View {
                 }
             }
         }
+        .onChange(of: location) { oldValue, newValue in
+            guard oldValue != newValue else { return }
+
+            if shouldPreservePickedCoordinateForNextLocationChange {
+                shouldPreservePickedCoordinateForNextLocationChange = false
+                return
+            }
+
+            pickedCoordinate = nil
+        }
         .sheet(isPresented: $showLocationPicker) {
-            LocationPickerView(coordinate: $pickedCoordinate, locationName: $location)
+            LocationPickerView(
+                coordinate: $pickedCoordinate,
+                locationName: $location,
+                preserveCoordinateOnLocationChange: $shouldPreservePickedCoordinateForNextLocationChange
+            )
         }
         .overlay(alignment: .top) {
             if showSuccess {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.green)
-                    Text("Item posted successfully!")
+                    Text(successMessage)
                         .font(.subheadline)
                         .fontWeight(.medium)
                 }
@@ -260,7 +257,92 @@ struct PostView: View {
         .animation(.spring(duration: 0.3), value: showSuccess)
     }
 
-    private func postItem() async {
+    private var photoPicker: some View {
+        PhotosPicker(selection: $selectedPhoto, matching: .images) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(.systemGray5))
+                    .frame(height: 120)
+
+                if isLoadingPhoto {
+                    VStack(spacing: 8) {
+                        ProgressView()
+                        Text("Loading photo...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                } else if let data = selectedPhotoData, let uiImage = UIImage(data: data) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(height: 120)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                } else if let existingPhotoURL = editingItem?.photoURL, let url = URL(string: existingPhotoURL) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .empty:
+                            ProgressView()
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFill()
+                                .frame(height: 120)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                        case .failure:
+                            photoPlaceholder(text: "Tap to replace photo")
+                        @unknown default:
+                            photoPlaceholder(text: "Tap to replace photo")
+                        }
+                    }
+                } else {
+                    photoPlaceholder(text: isEditing ? "Tap to add or replace photo" : "Tap to add photo")
+                }
+            }
+        }
+        .padding(.horizontal)
+        .onChange(of: selectedPhoto) { _, item in
+            let loadID = UUID()
+            photoLoadID = loadID
+            selectedPhotoData = nil
+            guard let item else {
+                isLoadingPhoto = false
+                return
+            }
+
+            isLoadingPhoto = true
+            errorMessage = nil
+
+            Task {
+                do {
+                    guard let data = try await item.loadTransferable(type: Data.self) else {
+                        throw CocoaError(.fileReadCorruptFile)
+                    }
+                    guard photoLoadID == loadID else { return }
+                    selectedPhotoData = data
+                    isLoadingPhoto = false
+                } catch {
+                    guard photoLoadID == loadID else { return }
+                    selectedPhotoData = nil
+                    selectedPhoto = nil
+                    isLoadingPhoto = false
+                    errorMessage = "Photo could not be loaded. Please choose a different image."
+                }
+            }
+        }
+    }
+
+    private func photoPlaceholder(text: String) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: "camera")
+                .font(.system(size: 28))
+                .foregroundColor(.secondary)
+            Text(text)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private func submitItem() async {
         guard let user = authService.currentUser else { return }
         focusedField = nil
         isPosting = true
@@ -276,32 +358,55 @@ struct PostView: View {
             ? location
             : "\(location), \(buildingRoom)"
 
-        let newItem = Item(id: UUID().uuidString, data: [
-            "title": title,
-            "description": description,
-            "category": selectedCategory,
-            "type": itemType,
-            "status": "active",
-            "location": fullLocation,
-            "latitude": pickedCoordinate?.latitude as Any,
-            "longitude": pickedCoordinate?.longitude as Any,
-            "postedBy": user.uid,
-            "postedByName": user.displayName ?? user.email ?? "Unknown",
-            "createdAt": Timestamp(date: Date())
-        ])
-
         do {
-            if let item = newItem {
-                try await itemRepository.createItem(item, photoData: selectedPhotoData)
+            if let editingItem {
+                var updatedItem = editingItem
+                updatedItem.title = title
+                updatedItem.description = description
+                updatedItem.category = selectedCategory
+                updatedItem.type = itemType
+                updatedItem.status = itemStatus
+                updatedItem.location = fullLocation
+                updatedItem.latitude = pickedCoordinate?.latitude
+                updatedItem.longitude = pickedCoordinate?.longitude
+
+                try await itemRepository.updateItem(updatedItem, replacementPhotoData: selectedPhotoData)
+                await handleSuccessfulSubmit()
+            } else if let newItem = Item(id: UUID().uuidString, data: [
+                "title": title,
+                "description": description,
+                "category": selectedCategory,
+                "type": itemType,
+                "status": "active",
+                "location": fullLocation,
+                "latitude": pickedCoordinate?.latitude as Any,
+                "longitude": pickedCoordinate?.longitude as Any,
+                "postedBy": user.uid,
+                "postedByName": user.displayName ?? user.email ?? "Unknown",
+                "createdAt": Timestamp(date: Date())
+            ]) {
+                try await itemRepository.createItem(newItem, photoData: selectedPhotoData)
                 resetForm()
-                withAnimation { showSuccess = true }
-                try? await Task.sleep(nanoseconds: 2_500_000_000)
-                withAnimation { showSuccess = false }
+                await handleSuccessfulSubmit()
             }
         } catch {
             errorMessage = error.localizedDescription
         }
+
         isPosting = false
+    }
+
+    private func handleSuccessfulSubmit() async {
+        withAnimation { showSuccess = true }
+
+        if isEditing {
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            withAnimation { showSuccess = false }
+            dismiss()
+        } else {
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            withAnimation { showSuccess = false }
+        }
     }
 
     private func resetForm() {
@@ -311,6 +416,7 @@ struct PostView: View {
         buildingRoom = ""
         selectedCategory = "other"
         itemType = "lost"
+        itemStatus = "active"
         selectedPhoto = nil
         selectedPhotoData = nil
         isLoadingPhoto = false
@@ -322,6 +428,7 @@ struct PostView: View {
 private struct LocationPickerView: View {
     @Binding var coordinate: CLLocationCoordinate2D?
     @Binding var locationName: String
+    @Binding var preserveCoordinateOnLocationChange: Bool
     @Environment(\.dismiss) private var dismiss
 
     @State private var cameraPosition: MapCameraPosition = .region(
@@ -396,6 +503,7 @@ private struct LocationPickerView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Confirm") {
+                        preserveCoordinateOnLocationChange = true
                         coordinate = pinCoordinate
                         locationName = resolvedName
                         dismiss()
@@ -422,12 +530,4 @@ private struct LocationPickerView: View {
             }
         }
     }
-}
-
-#Preview {
-    NavigationStack {
-        PostView()
-    }
-    .environmentObject(ItemRepository())
-    .environmentObject(AuthService())
 }

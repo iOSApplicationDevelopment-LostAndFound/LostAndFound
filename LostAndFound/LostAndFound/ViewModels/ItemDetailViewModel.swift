@@ -13,6 +13,9 @@ import FirebaseFirestore
 class ItemDetailViewModel: ObservableObject {
     @Published var isClaiming: Bool = false
     @Published var showConfirm: Bool = false
+    @Published var showEditSheet: Bool = false
+    @Published var showDeleteConfirm: Bool = false
+    @Published var isDeleting: Bool = false
     @Published var isNotifying: Bool = false
     @Published var hasNotified: Bool = false
     @Published var errorMessage: String? = nil
@@ -24,7 +27,7 @@ class ItemDetailViewModel: ObservableObject {
     }
 
     func isOwner(item: Item, currentUserUID: String?) -> Bool {
-        currentUserUID == item.postedBy
+        ItemOwnership.isOwner(item: item, currentUserUID: currentUserUID)
     }
 
     func claimItem(_ item: Item, using repository: ItemRepository) async {
@@ -65,5 +68,20 @@ class ItemDetailViewModel: ObservableObject {
             errorMessage = error.localizedDescription
         }
         isNotifying = false
+    }
+
+    func deleteItem(_ item: Item, using repository: ItemRepository) async -> Bool {
+        isDeleting = true
+        errorMessage = nil
+
+        do {
+            try await repository.deleteItem(item)
+            isDeleting = false
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            isDeleting = false
+            return false
+        }
     }
 }

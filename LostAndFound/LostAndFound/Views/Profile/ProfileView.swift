@@ -11,6 +11,9 @@ import FirebaseAuth
 struct ProfileView: View {
     @EnvironmentObject var authService: AuthService
     @EnvironmentObject var itemRepository: ItemRepository
+    @State private var pendingDeleteItem: Item? = nil
+    @State private var isDeleting: Bool = false
+    @State private var deleteErrorMessage: String? = nil
 
     var myItems: [Item] {
         guard let uid = authService.currentUser?.uid else { return [] }
@@ -35,86 +38,68 @@ struct ProfileView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                VStack(spacing: 0) {
-                    ZStack(alignment: .bottomTrailing) {
-                        ZStack {
-                            Circle()
-                                .fill(LinearGradient(colors: [.blue, .blue.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                .frame(width: 80, height: 80)
-                                .shadow(color: .blue.opacity(0.3), radius: 8, x: 0, y: 4)
-                            Text(initials.isEmpty ? "?" : initials)
-                                .font(.title)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
-                        }
+        List {
+            Section {
+                profileHeader
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
 
-                        ZStack {
-                            Circle()
-                                .fill(Color(.systemBackground))
-                                .frame(width: 26, height: 26)
-                            Image(systemName: "camera.fill")
-                                .font(.system(size: 12))
-                                .foregroundColor(.blue)
-                        }
-                        .offset(x: 2, y: 2)
-                    }
-                    .padding(.bottom, 12)
-
-                    Text(displayName)
-                        .font(.title3)
-                        .fontWeight(.bold)
-
-                    Text(authService.currentUser?.email ?? "")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .padding(.top, 2)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
-                .background(Color(.systemBackground))
-                .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
-
+            Section {
                 HStack(spacing: 12) {
                     StatCard(value: lostCount, label: "Lost", color: .red)
                     StatCard(value: foundCount, label: "Found", color: .green)
                     StatCard(value: totalCount, label: "Total", color: .blue)
                 }
-                .padding(.horizontal)
+                .padding(.vertical, 6)
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+            }
 
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("My Posts")
-                        .font(.headline)
-                        .padding(.horizontal)
-
-                    if myItems.isEmpty {
-                        VStack(spacing: 10) {
-                            Image(systemName: "tray")
-                                .font(.system(size: 36))
-                                .foregroundColor(.secondary)
-                            Text("No posts yet")
-                                .foregroundColor(.secondary)
-                                .font(.subheadline)
-                            Text("Start by posting a lost or found item")
-                                .foregroundColor(.secondary)
-                                .font(.caption)
+            Section("My Posts") {
+                if myItems.isEmpty {
+                    VStack(spacing: 10) {
+                        Image(systemName: "tray")
+                            .font(.system(size: 36))
+                            .foregroundColor(.secondary)
+                        Text("No posts yet")
+                            .foregroundColor(.secondary)
+                            .font(.subheadline)
+                        Text("Start by posting a lost or found item")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 40)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                } else {
+                    ForEach(myItems) { item in
+                        NavigationLink(destination: ItemDetailView(item: item)) {
+                            MyItemRow(item: item)
+                                .padding(.vertical, 4)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 40)
-                    } else {
-                        LazyVStack(spacing: 10) {
-                            ForEach(myItems) { item in
-                                NavigationLink(destination: ItemDetailView(item: item)) {
-                                    MyItemRow(item: item)
-                                        .padding(.horizontal)
+                        .buttonStyle(.plain)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            if ItemOwnership.isOwner(item: item, currentUserUID: authService.currentUser?.uid) {
+                                Button(role: .destructive) {
+                                    pendingDeleteItem = item
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
                                 }
-                                .buttonStyle(.plain)
+                                .tint(.red)
                             }
                         }
                     }
                 }
+            }
 
+            Section {
                 Button {
                     authService.signOut()
                 } label: {
@@ -128,13 +113,125 @@ struct ProfileView: View {
                     .background(Color(.systemBackground))
                     .cornerRadius(12)
                     .shadow(color: .black.opacity(0.04), radius: 4)
-                    .padding(.horizontal)
                 }
-                .padding(.bottom, 20)
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 20, trailing: 16))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
         .navigationTitle("Profile")
         .background(Color(.systemGroupedBackground))
+        .overlay(alignment: .top) {
+            if isDeleting {
+                ProgressView("Deleting item...")
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Color(.systemBackground))
+                    .cornerRadius(10)
+                    .shadow(color: .black.opacity(0.08), radius: 6)
+                    .padding(.top, 8)
+            }
+        }
+        .alert(
+            "Delete this post?",
+            isPresented: deleteConfirmationBinding,
+            presenting: pendingDeleteItem
+        ) { item in
+            Button("Delete", role: .destructive) {
+                Task { await delete(item) }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDeleteItem = nil
+            }
+        } message: { _ in
+            Text("This removes the post and any uploaded photo.")
+        }
+        .alert("Delete Failed", isPresented: deleteErrorBinding) {
+            Button("OK", role: .cancel) {
+                deleteErrorMessage = nil
+            }
+        } message: {
+            Text(deleteErrorMessage ?? "The post could not be deleted.")
+        }
+    }
+
+    private var profileHeader: some View {
+        VStack(spacing: 0) {
+            ZStack(alignment: .bottomTrailing) {
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(colors: [.blue, .blue.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 80, height: 80)
+                        .shadow(color: .blue.opacity(0.3), radius: 8, x: 0, y: 4)
+                    Text(initials.isEmpty ? "?" : initials)
+                        .font(.title)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                }
+
+                ZStack {
+                    Circle()
+                        .fill(Color(.systemBackground))
+                        .frame(width: 26, height: 26)
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(.blue)
+                }
+                .offset(x: 2, y: 2)
+            }
+            .padding(.bottom, 12)
+
+            Text(displayName)
+                .font(.title3)
+                .fontWeight(.bold)
+
+            Text(authService.currentUser?.email ?? "")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .padding(.top, 2)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+        .background(Color(.systemBackground))
+        .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+    }
+
+    private var deleteConfirmationBinding: Binding<Bool> {
+        Binding(
+            get: { pendingDeleteItem != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingDeleteItem = nil
+                }
+            }
+        )
+    }
+
+    private var deleteErrorBinding: Binding<Bool> {
+        Binding(
+            get: { deleteErrorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    deleteErrorMessage = nil
+                }
+            }
+        )
+    }
+
+    private func delete(_ item: Item) async {
+        isDeleting = true
+        deleteErrorMessage = nil
+
+        do {
+            try await itemRepository.deleteItem(item)
+            pendingDeleteItem = nil
+        } catch {
+            deleteErrorMessage = error.localizedDescription
+        }
+
+        isDeleting = false
     }
 }
 

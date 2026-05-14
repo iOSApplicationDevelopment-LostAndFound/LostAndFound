@@ -15,6 +15,7 @@ struct ItemDetailView: View {
 
     @EnvironmentObject var authService: AuthService
     @EnvironmentObject var itemRepository: ItemRepository
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel = ItemDetailViewModel()
 
     var body: some View {
@@ -81,6 +82,10 @@ struct ItemDetailView: View {
                         Text(error)
                             .font(.caption)
                             .foregroundColor(.red)
+                    }
+
+                    if isOwner {
+                        ownerActions(for: liveItem)
                     }
 
                     // Mark resolved — only shown to the owner on active items
@@ -199,6 +204,65 @@ struct ItemDetailView: View {
                 Task { await viewModel.claimItem(liveItem, using: itemRepository) }
             }
             Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog(
+            "Remove this item?",
+            isPresented: $viewModel.showDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Remove Item", role: .destructive) {
+                Task {
+                    if await viewModel.deleteItem(liveItem, using: itemRepository) {
+                        dismiss()
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently removes the post. If it has a photo, the stored image will be removed too.")
+        }
+        .sheet(isPresented: $viewModel.showEditSheet) {
+            NavigationStack {
+                PostView(editingItem: liveItem)
+            }
+            .environmentObject(authService)
+            .environmentObject(itemRepository)
+        }
+    }
+
+    @ViewBuilder
+    private func ownerActions(for liveItem: Item) -> some View {
+        VStack(spacing: 10) {
+            Button {
+                viewModel.showEditSheet = true
+            } label: {
+                Label("Edit", systemImage: "pencil")
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue.opacity(0.1))
+                    .foregroundColor(.blue)
+                    .cornerRadius(12)
+                    .fontWeight(.semibold)
+            }
+
+            Button(role: .destructive) {
+                viewModel.showDeleteConfirm = true
+            } label: {
+                if viewModel.isDeleting {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                } else {
+                    Label("Remove", systemImage: "trash")
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.red.opacity(0.12))
+                        .foregroundColor(.red)
+                        .cornerRadius(12)
+                        .fontWeight(.semibold)
+                }
+            }
+            .disabled(viewModel.isDeleting)
         }
     }
 }
